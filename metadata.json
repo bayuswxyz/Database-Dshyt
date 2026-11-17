@@ -1,0 +1,6 @@
+{
+  "name": "Kopi D'SHYT — Modul Penjualan, Rekap & Nota",
+  "description": "Sistem pencatatan penjualan pre-order, analisis performa produk, manajemen arus kas, dan generator nota digital (PDF & PNG) terintegrasi untuk Kopi D'SHYT PWT.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
