@@ -124,6 +124,7 @@ export function exportSalesToCSV(orders: SalesOrder[]): void {
     'Lokasi',
     'Metode Pembayaran',
     'Status Pembayaran',
+    'Status Pemesanan',
     'Rincian Varian & Qty',
     'Total Unit',
     'Subtotal Menu (IDR)',
@@ -146,6 +147,7 @@ export function exportSalesToCSV(orders: SalesOrder[]): void {
       order.locationDetail,
       order.paymentMethod,
       order.paymentStatus,
+      order.orderStatus || 'Diterima',
       itemDesc,
       totalQty,
       order.itemsSubtotal,
@@ -185,6 +187,7 @@ export function exportWorkbookToXLSX(
     Lokasi: order.locationDetail,
     'Metode Bayar': order.paymentMethod,
     'Status Bayar': order.paymentStatus,
+    'Status Pemesanan': order.orderStatus || 'Diterima',
     'Varian Produk': order.items
       .map((i) => `${i.qty}x ${i.name}${i.extraShot ? ' (+Extra Shot)' : ''}`)
       .join('; '),
@@ -225,6 +228,7 @@ export function exportWorkbookToXLSX(
     { wch: 28 },
     { wch: 14 },
     { wch: 12 },
+    { wch: 16 },
     { wch: 36 },
     { wch: 10 },
     { wch: 14 },

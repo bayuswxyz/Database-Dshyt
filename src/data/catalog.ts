@@ -126,6 +126,7 @@ export const SEED_ORDERS: SalesOrder[] = [
     courierNote: 'Hubungi via WA pas sampai lobi',
     paymentMethod: 'QR / QRIS',
     paymentStatus: 'Lunas',
+    orderStatus: 'Proses',
     items: [
       {
         id: 'item-8821-1',
@@ -168,6 +169,7 @@ export const SEED_ORDERS: SalesOrder[] = [
     courierNote: 'Titip di meja depan jika sedang kelas',
     paymentMethod: 'QR / QRIS',
     paymentStatus: 'Lunas',
+    orderStatus: 'Proses',
     items: [
       {
         id: 'item-8820-1',
@@ -209,6 +211,7 @@ export const SEED_ORDERS: SalesOrder[] = [
     courierNote: 'Ambil jam 13.00 WIB',
     paymentMethod: 'Cash',
     paymentStatus: 'Pending',
+    orderStatus: 'Diterima',
     items: [
       {
         id: 'item-8819-1',
@@ -250,6 +253,7 @@ export const SEED_ORDERS: SalesOrder[] = [
     courierNote: 'Order himpunan mahasiswa',
     paymentMethod: 'QR / QRIS',
     paymentStatus: 'Lunas',
+    orderStatus: 'Selesai',
     items: [
       {
         id: 'item-8818-1',
@@ -292,6 +296,7 @@ export const SEED_ORDERS: SalesOrder[] = [
     courierNote: '',
     paymentMethod: 'Cash',
     paymentStatus: 'Lunas',
+    orderStatus: 'Selesai',
     items: [
       {
         id: 'item-8817-1',
@@ -333,6 +338,7 @@ export const SEED_ORDERS: SalesOrder[] = [
     courierNote: 'WA pas di pintu utama',
     paymentMethod: 'QR / QRIS',
     paymentStatus: 'Pending',
+    orderStatus: 'Diterima',
     items: [
       {
         id: 'item-8816-1',

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Minus, Plus, Search, ShoppingBag, Trash2, X } from 'lucide-react';
 import { EXTRA_SHOT_PRICE, MENU_CATALOG } from '../data/catalog';
 import type {
@@ -7,6 +7,7 @@ import type {
   MenuCategory,
   MenuItem,
   OrderItem,
+  OrderStatus,
   PaymentMethod,
   PaymentStatus,
   SalesOrder,
@@ -20,8 +21,14 @@ import {
 
 interface PreOrderModalProps {
   isOpen: boolean;
+  editingOrder?: SalesOrder | null;
   onClose: () => void;
   onCreateOrder: (
+    orderInput: Omit<SalesOrder, 'id' | 'createdAt'>,
+    openInvoiceAfter: boolean
+  ) => void;
+  onUpdateOrder?: (
+    orderId: string,
     orderInput: Omit<SalesOrder, 'id' | 'createdAt'>,
     openInvoiceAfter: boolean
   ) => void;
@@ -34,10 +41,14 @@ const CATEGORIES: ('Semua' | MenuCategory)[] = [
   'Citrus & Sparkling',
 ];
 
+const ORDER_STATUSES: OrderStatus[] = ['Diterima', 'Proses', 'Selesai'];
+
 export function PreOrderModal({
   isOpen,
+  editingOrder,
   onClose,
   onCreateOrder,
+  onUpdateOrder,
 }: PreOrderModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<'Semua' | MenuCategory>('Semua');
@@ -51,10 +62,44 @@ export function PreOrderModal({
   const [courierNote, setCourierNote] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('QR / QRIS');
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('Lunas');
+  const [orderStatus, setOrderStatus] = useState<OrderStatus>('Diterima');
   const [shippingFee, setShippingFee] = useState<number>(0);
   const [discount, setDiscount] = useState<number>(0);
   const [openInvoiceAfter, setOpenInvoiceAfter] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (editingOrder) {
+      setCart(editingOrder.items.map((item) => ({ ...item })));
+      setCustomerName(editingOrder.customerName);
+      setWhatsapp(editingOrder.whatsapp);
+      setDeliveryMethod(editingOrder.deliveryMethod);
+      setLocationDetail(editingOrder.locationDetail || '');
+      setCourierNote(editingOrder.courierNote || '');
+      setPaymentMethod(editingOrder.paymentMethod);
+      setPaymentStatus(editingOrder.paymentStatus);
+      setOrderStatus(editingOrder.orderStatus || 'Diterima');
+      setShippingFee(editingOrder.shippingFee || 0);
+      setDiscount(editingOrder.discount || 0);
+      setOpenInvoiceAfter(false);
+      setErrorMsg('');
+    } else {
+      setCart([]);
+      setCustomerName('');
+      setWhatsapp('');
+      setDeliveryMethod('Delivery — Area Kampus');
+      setLocationDetail('');
+      setCourierNote('');
+      setPaymentMethod('QR / QRIS');
+      setPaymentStatus('Lunas');
+      setOrderStatus('Diterima');
+      setShippingFee(0);
+      setDiscount(0);
+      setOpenInvoiceAfter(false);
+      setErrorMsg('');
+    }
+  }, [isOpen, editingOrder]);
 
   const filteredCatalog = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -154,6 +199,7 @@ export function PreOrderModal({
     setCourierNote('');
     setPaymentMethod('QR / QRIS');
     setPaymentStatus('Lunas');
+    setOrderStatus('Diterima');
     setShippingFee(0);
     setDiscount(0);
     setErrorMsg('');
@@ -162,7 +208,7 @@ export function PreOrderModal({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (cart.length === 0) {
-      setErrorMsg('Pilih minimal 1 menu Kopi D’SHYT sebelum mencatat pesanan.');
+      setErrorMsg('Pilih minimal 1 menu Kopi D’SHYT sebelum menyimpan pesanan.');
       return;
     }
     if (!customerName.trim()) {
@@ -174,26 +220,33 @@ export function PreOrderModal({
       return;
     }
 
-    onCreateOrder(
-      {
-        customerName: customerName.trim(),
-        whatsapp: whatsapp.trim(),
-        deliveryMethod,
-        locationDetail: locationDetail.trim(),
-        courierNote: courierNote.trim(),
-        paymentMethod,
-        paymentStatus,
-        items: cart,
-        itemsSubtotal,
-        shippingFee,
-        discount,
-        totalAmount,
-      },
-      openInvoiceAfter
-    );
+    const payload: Omit<SalesOrder, 'id' | 'createdAt'> = {
+      customerName: customerName.trim(),
+      whatsapp: whatsapp.trim(),
+      deliveryMethod,
+      locationDetail: locationDetail.trim(),
+      courierNote: courierNote.trim(),
+      paymentMethod,
+      paymentStatus,
+      orderStatus,
+      items: cart,
+      itemsSubtotal,
+      shippingFee,
+      discount,
+      totalAmount,
+      invoiceNote: courierNote.trim() || undefined,
+    };
 
+    if (editingOrder && onUpdateOrder) {
+      onUpdateOrder(editingOrder.id, payload, openInvoiceAfter);
+      return;
+    }
+
+    onCreateOrder(payload, openInvoiceAfter);
     resetForm();
   }
+
+  const isEditing = Boolean(editingOrder);
 
   return (
     <div
@@ -204,16 +257,24 @@ export function PreOrderModal({
     >
       <div className="bg-[#FAF8F5] border border-[#E8E2DA] rounded-2xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden shadow-xl">
         {/* Modal Header */}
-        <div className="px-5 sm:px-6 py-4 bg-white border-b border-[#E8E2DA] flex items-center justify-between gap-4">
+        <div className="shrink-0 px-5 sm:px-6 py-3.5 bg-white border-b border-[#E8E2DA] flex items-center justify-between gap-4">
           <div>
             <p className="text-[11px] font-semibold text-[#8C3B19] uppercase tracking-wider">
-              Sinkronisasi Alur Pre-Order Kopi D'SHYT
+              {isEditing && editingOrder
+                ? `Edit Data Pesanan ${editingOrder.id}${
+                    editingOrder.sheetRowIndex
+                      ? ` · Sheet Baris #${editingOrder.sheetRowIndex}`
+                      : ''
+                  }`
+                : "Sinkronisasi Alur Pre-Order Kopi D'SHYT"}
             </p>
             <h2
               id="preorder-modal-title"
               className="font-display text-xl font-bold text-[#1A1614]"
             >
-              Catat Pesanan Pre-Order Baru
+              {isEditing
+                ? 'Edit Pesanan & Baris Spreadsheet'
+                : 'Catat Pesanan Pre-Order Baru'}
             </h2>
           </div>
           <button
@@ -227,9 +288,9 @@ export function PreOrderModal({
         </div>
 
         {/* Two-Column Integrated Catalog + Checkout Body */}
-        <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-12">
+        <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-[minmax(0,1fr)]">
           {/* Left: 11 Menu Items from Reference Site */}
-          <div className="lg:col-span-7 p-5 sm:p-6 space-y-4 border-b lg:border-b-0 lg:border-r border-[#E8E2DA]">
+          <div className="lg:col-span-7 lg:min-h-0 lg:overflow-y-auto p-5 sm:p-6 space-y-4 border-b lg:border-b-0 lg:border-r border-[#E8E2DA]">
             <div className="space-y-3">
               <div className="relative w-full">
                 <Search
@@ -306,286 +367,336 @@ export function PreOrderModal({
           </div>
 
           {/* Right: Ringkasan Pesanan & Checkout Form */}
-          <form onSubmit={handleSubmit} className="lg:col-span-5 p-5 sm:p-6 bg-white space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-display text-lg font-bold text-[#1A1614] flex items-center gap-2">
-                <ShoppingBag className="w-4 h-4 text-[#C2410C]" aria-hidden="true" />
-                <span>Ringkasan Pesanan</span>
-              </h3>
-              <span className="text-xs font-mono text-[#6E635C]">
-                {cart.reduce((s, i) => s + i.qty, 0)} item
-              </span>
-            </div>
-
-            {errorMsg && (
-              <div
-                role="alert"
-                className="text-xs font-medium text-[#B91C1C] bg-[#FEF2F2] border border-[#FECACA] rounded-lg px-3 py-2"
-              >
-                {errorMsg}
+          <form
+            onSubmit={handleSubmit}
+            className="lg:col-span-5 lg:min-h-0 flex flex-col bg-white"
+          >
+            <div className="flex-1 min-h-0 lg:overflow-y-auto p-4 sm:p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-display text-lg font-bold text-[#1A1614] flex items-center gap-2">
+                  <ShoppingBag className="w-4 h-4 text-[#C2410C]" aria-hidden="true" />
+                  <span>Ringkasan Pesanan</span>
+                </h3>
+                <span className="text-xs font-mono text-[#6E635C]">
+                  {cart.reduce((s, i) => s + i.qty, 0)} item
+                </span>
               </div>
-            )}
 
-            {/* Cart Items */}
-            {cart.length === 0 ? (
-              <div className="p-4 rounded-xl bg-[#FAF8F5] border border-dashed border-[#D5CBC0] text-xs text-[#6E635C]">
-                Belum ada menu dipilih. Tekan tombol <strong>Tambah</strong> pada daftar menu
-                untuk mengatur es, gula, dan ekstra shot.
-              </div>
-            ) : (
-              <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1">
-                {cart.map((item) => {
-                  const catalogMeta = MENU_CATALOG.find((m) => m.id === item.skuId);
-                  return (
-                    <div
-                      key={item.id}
-                      className="p-3 rounded-lg bg-[#FAF8F5] border border-[#E8E2DA] space-y-2"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <div className="text-xs font-semibold text-[#1A1614]">{item.name}</div>
-                          <div className="font-mono text-[11px] text-[#6E635C]">
-                            {formatIDR(item.subtotal)}
+              {errorMsg && (
+                <div
+                  role="alert"
+                  className="text-xs font-medium text-[#B91C1C] bg-[#FEF2F2] border border-[#FECACA] rounded-lg px-3 py-2"
+                >
+                  {errorMsg}
+                </div>
+              )}
+
+              {/* Cart Items */}
+              {cart.length === 0 ? (
+                <div className="p-3.5 rounded-xl bg-[#FAF8F5] border border-dashed border-[#D5CBC0] text-xs text-[#6E635C]">
+                  Belum ada menu dipilih. Tekan tombol <strong>Tambah</strong> pada daftar menu
+                  untuk mengatur es, gula, dan ekstra shot.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+                  {cart.map((item) => {
+                    const catalogMeta = MENU_CATALOG.find((m) => m.id === item.skuId);
+                    return (
+                      <div
+                        key={item.id}
+                        className="p-2.5 rounded-lg bg-[#FAF8F5] border border-[#E8E2DA] space-y-1.5"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="text-xs font-semibold text-[#1A1614]">{item.name}</div>
+                            <div className="font-mono text-[11px] text-[#6E635C]">
+                              {formatIDR(item.subtotal)}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => updateItem(item.id, { qty: item.qty - 1 })}
+                              aria-label={`Kurangi jumlah ${item.name}`}
+                              className="w-6 h-6 rounded border border-[#D5CBC0] bg-white flex items-center justify-center text-[#1A1614] cursor-pointer"
+                            >
+                              <Minus className="w-3 h-3" aria-hidden="true" />
+                            </button>
+                            <span className="font-mono text-xs font-semibold w-5 text-center">
+                              {item.qty}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => updateItem(item.id, { qty: item.qty + 1 })}
+                              aria-label={`Tambah jumlah ${item.name}`}
+                              className="w-6 h-6 rounded border border-[#D5CBC0] bg-white flex items-center justify-center text-[#1A1614] cursor-pointer"
+                            >
+                              <Plus className="w-3 h-3" aria-hidden="true" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateItem(item.id, { qty: 0 })}
+                              aria-label={`Hapus ${item.name} dari keranjang`}
+                              className="p-1 text-[#8A7E75] hover:text-[#B91C1C] cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                            </button>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => updateItem(item.id, { qty: item.qty - 1 })}
-                            aria-label={`Kurangi jumlah ${item.name}`}
-                            className="w-6 h-6 rounded border border-[#D5CBC0] bg-white flex items-center justify-center text-[#1A1614] cursor-pointer"
-                          >
-                            <Minus className="w-3 h-3" aria-hidden="true" />
-                          </button>
-                          <span className="font-mono text-xs font-semibold w-5 text-center">
-                            {item.qty}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => updateItem(item.id, { qty: item.qty + 1 })}
-                            aria-label={`Tambah jumlah ${item.name}`}
-                            className="w-6 h-6 rounded border border-[#D5CBC0] bg-white flex items-center justify-center text-[#1A1614] cursor-pointer"
-                          >
-                            <Plus className="w-3 h-3" aria-hidden="true" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => updateItem(item.id, { qty: 0 })}
-                            aria-label={`Hapus ${item.name} dari keranjang`}
-                            className="p-1 text-[#8A7E75] hover:text-[#B91C1C] cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                          </button>
+                        <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                          {catalogMeta?.supportsIceSugar && (
+                            <>
+                              <select
+                                aria-label={`Level es ${item.name}`}
+                                value={item.iceLevel}
+                                onChange={(e) =>
+                                  updateItem(item.id, { iceLevel: e.target.value as IceLevel })
+                                }
+                                className="px-2 py-1 text-[11px] bg-white border border-[#E2D9CE] rounded text-[#1A1614]"
+                              >
+                                <option value="Normal Ice">Normal Ice</option>
+                                <option value="Less Ice">Less Ice</option>
+                                <option value="No Ice">No Ice</option>
+                              </select>
+
+                              <select
+                                aria-label={`Level gula ${item.name}`}
+                                value={item.sugarLevel}
+                                onChange={(e) =>
+                                  updateItem(item.id, { sugarLevel: e.target.value as SugarLevel })
+                                }
+                                className="px-2 py-1 text-[11px] bg-white border border-[#E2D9CE] rounded text-[#1A1614]"
+                              >
+                                <option value="Normal Sugar">Normal Sugar</option>
+                                <option value="Less Sugar">Less Sugar</option>
+                                <option value="No Sugar">No Sugar</option>
+                              </select>
+                            </>
+                          )}
+
+                          {catalogMeta?.supportsEspressoShot && (
+                            <label className="inline-flex items-center gap-1 text-[11px] text-[#1A1614] cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={item.extraShot}
+                                onChange={(e) =>
+                                  updateItem(item.id, { extraShot: e.target.checked })
+                                }
+                                className="accent-[#C2410C]"
+                              />
+                              <span>+Extra Shot ({formatIDR(EXTRA_SHOT_PRICE)})</span>
+                            </label>
+                          )}
                         </div>
                       </div>
+                    );
+                  })}
+                </div>
+              )}
 
-                      <div className="flex flex-wrap items-center gap-2 pt-1">
-                        {catalogMeta?.supportsIceSugar && (
-                          <>
-                            <select
-                              aria-label={`Level es ${item.name}`}
-                              value={item.iceLevel}
-                              onChange={(e) =>
-                                updateItem(item.id, { iceLevel: e.target.value as IceLevel })
-                              }
-                              className="px-2 py-1 text-[11px] bg-white border border-[#E2D9CE] rounded text-[#1A1614]"
-                            >
-                              <option value="Normal Ice">Normal Ice</option>
-                              <option value="Less Ice">Less Ice</option>
-                              <option value="No Ice">No Ice</option>
-                            </select>
+              {/* Buyer & Delivery Information (Matching reference site) */}
+              <div className="space-y-2.5 pt-2 border-t border-[#EFEAE2]">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-[#6E635C]">
+                  Informasi Pemesan &amp; Pengiriman
+                </h4>
 
-                            <select
-                              aria-label={`Level gula ${item.name}`}
-                              value={item.sugarLevel}
-                              onChange={(e) =>
-                                updateItem(item.id, { sugarLevel: e.target.value as SugarLevel })
-                              }
-                              className="px-2 py-1 text-[11px] bg-white border border-[#E2D9CE] rounded text-[#1A1614]"
-                            >
-                              <option value="Normal Sugar">Normal Sugar</option>
-                              <option value="Less Sugar">Less Sugar</option>
-                              <option value="No Sugar">No Sugar</option>
-                            </select>
-                          </>
-                        )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label
+                      htmlFor="po-name"
+                      className="block text-xs font-semibold text-[#1A1614] mb-1"
+                    >
+                      Nama Lengkap
+                    </label>
+                    <input
+                      id="po-name"
+                      type="text"
+                      placeholder="Contoh: Bayu Satrio"
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs bg-[#FAF8F5] border border-[#E2D9CE] rounded-lg text-[#1A1614] focus:outline-none focus:bg-white focus:border-[#C2410C]"
+                    />
+                  </div>
 
-                        {catalogMeta?.supportsEspressoShot && (
-                          <label className="inline-flex items-center gap-1 text-[11px] text-[#1A1614] cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={item.extraShot}
-                              onChange={(e) =>
-                                updateItem(item.id, { extraShot: e.target.checked })
-                              }
-                              className="accent-[#C2410C]"
-                            />
-                            <span>+Extra Shot ({formatIDR(EXTRA_SHOT_PRICE)})</span>
-                          </label>
-                        )}
-                      </div>
+                  <div>
+                    <label
+                      htmlFor="po-wa"
+                      className="block text-xs font-semibold text-[#1A1614] mb-1"
+                    >
+                      Nomor WhatsApp
+                    </label>
+                    <input
+                      id="po-wa"
+                      type="tel"
+                      placeholder="Contoh: 081234567890"
+                      value={whatsapp}
+                      onChange={(e) => setWhatsapp(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs font-mono bg-[#FAF8F5] border border-[#E2D9CE] rounded-lg text-[#1A1614] focus:outline-none focus:bg-white focus:border-[#C2410C]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="po-delivery"
+                    className="block text-xs font-semibold text-[#1A1614] mb-1"
+                  >
+                    Metode Pengiriman
+                  </label>
+                  <select
+                    id="po-delivery"
+                    value={deliveryMethod}
+                    onChange={(e) => handleDeliveryChange(e.target.value as DeliveryMethod)}
+                    className="w-full px-3 py-1.5 text-xs bg-[#FAF8F5] border border-[#E2D9CE] rounded-lg text-[#1A1614] focus:outline-none focus:bg-white focus:border-[#C2410C]"
+                  >
+                    <option value="Delivery — Area Kampus">Delivery — Area Kampus</option>
+                    <option value="Delivery — Luar Kampus / Kos">
+                      Delivery — Luar Kampus / Kos
+                    </option>
+                    <option value="Ambil di Tempat (Pick-Up)">Ambil di Tempat (Pick-Up)</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label
+                      htmlFor="po-location"
+                      className="block text-xs font-semibold text-[#1A1614] mb-1"
+                    >
+                      Detail Lokasi / Gedung Kampus
+                    </label>
+                    <input
+                      id="po-location"
+                      type="text"
+                      placeholder="Contoh: Fakultas Teknik Lt. 2"
+                      value={locationDetail}
+                      onChange={(e) => setLocationDetail(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs bg-[#FAF8F5] border border-[#E2D9CE] rounded-lg text-[#1A1614] focus:outline-none focus:bg-white focus:border-[#C2410C]"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="po-courier-note"
+                      className="block text-xs font-semibold text-[#1A1614] mb-1"
+                    >
+                      Catatan Pesanan / Kurir
+                    </label>
+                    <input
+                      id="po-courier-note"
+                      type="text"
+                      placeholder="Contoh: Kloter sore / WA saat tiba"
+                      value={courierNote}
+                      onChange={(e) => setCourierNote(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs bg-[#FAF8F5] border border-[#E2D9CE] rounded-lg text-[#1A1614] focus:outline-none focus:bg-white focus:border-[#C2410C]"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label
+                      htmlFor="po-shipping"
+                      className="block text-xs font-semibold text-[#1A1614] mb-1"
+                    >
+                      Ongkir (Rp)
+                    </label>
+                    <input
+                      id="po-shipping"
+                      type="number"
+                      min={0}
+                      step={500}
+                      value={shippingFee}
+                      onChange={(e) => setShippingFee(Math.max(0, Number(e.target.value) || 0))}
+                      className="w-full px-3 py-1.5 text-xs font-mono bg-[#FAF8F5] border border-[#E2D9CE] rounded-lg text-[#1A1614] focus:outline-none focus:bg-white focus:border-[#C2410C]"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="po-discount"
+                      className="block text-xs font-semibold text-[#1A1614] mb-1"
+                    >
+                      Diskon (Rp)
+                    </label>
+                    <input
+                      id="po-discount"
+                      type="number"
+                      min={0}
+                      step={500}
+                      value={discount}
+                      onChange={(e) => setDiscount(Math.max(0, Number(e.target.value) || 0))}
+                      className="w-full px-3 py-1.5 text-xs font-mono bg-[#FAF8F5] border border-[#E2D9CE] rounded-lg text-[#1A1614] focus:outline-none focus:bg-white focus:border-[#C2410C]"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <span className="block text-xs font-semibold text-[#1A1614] mb-1">
+                      Metode Pembayaran
+                    </span>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {(['Cash', 'QR / QRIS'] as PaymentMethod[]).map((method) => (
+                        <button
+                          key={method}
+                          type="button"
+                          onClick={() => setPaymentMethod(method)}
+                          className={`py-1.5 px-2 text-xs font-semibold rounded-lg border transition-colors cursor-pointer ${
+                            paymentMethod === method
+                              ? 'bg-[#1A1614] text-white border-[#1A1614]'
+                              : 'bg-[#FAF8F5] text-[#1A1614] border-[#E2D9CE]'
+                          }`}
+                        >
+                          {method}
+                        </button>
+                      ))}
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                  </div>
 
-            {/* Buyer & Delivery Information (Matching reference site) */}
-            <div className="space-y-3 pt-2 border-t border-[#EFEAE2]">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-[#6E635C]">
-                Informasi Pemesan &amp; Pengiriman
-              </h4>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label
-                    htmlFor="po-name"
-                    className="block text-xs font-semibold text-[#1A1614] mb-1"
-                  >
-                    Nama Lengkap
-                  </label>
-                  <input
-                    id="po-name"
-                    type="text"
-                    placeholder="Contoh: Bayu Satrio"
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    className="w-full px-3 py-2 text-xs bg-[#FAF8F5] border border-[#E2D9CE] rounded-lg text-[#1A1614] focus:outline-none focus:bg-white focus:border-[#C2410C]"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="po-wa"
-                    className="block text-xs font-semibold text-[#1A1614] mb-1"
-                  >
-                    Nomor WhatsApp
-                  </label>
-                  <input
-                    id="po-wa"
-                    type="tel"
-                    placeholder="Contoh: 081234567890"
-                    value={whatsapp}
-                    onChange={(e) => setWhatsapp(e.target.value)}
-                    className="w-full px-3 py-2 text-xs font-mono bg-[#FAF8F5] border border-[#E2D9CE] rounded-lg text-[#1A1614] focus:outline-none focus:bg-white focus:border-[#C2410C]"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="po-delivery"
-                  className="block text-xs font-semibold text-[#1A1614] mb-1"
-                >
-                  Metode Pengiriman
-                </label>
-                <select
-                  id="po-delivery"
-                  value={deliveryMethod}
-                  onChange={(e) => handleDeliveryChange(e.target.value as DeliveryMethod)}
-                  className="w-full px-3 py-2 text-xs bg-[#FAF8F5] border border-[#E2D9CE] rounded-lg text-[#1A1614] focus:outline-none focus:bg-white focus:border-[#C2410C]"
-                >
-                  <option value="Delivery — Area Kampus">Delivery — Area Kampus</option>
-                  <option value="Delivery — Luar Kampus / Kos">
-                    Delivery — Luar Kampus / Kos
-                  </option>
-                  <option value="Ambil di Tempat (Pick-Up)">Ambil di Tempat (Pick-Up)</option>
-                </select>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="po-location"
-                  className="block text-xs font-semibold text-[#1A1614] mb-1"
-                >
-                  Detail Lokasi / Gedung Kampus
-                </label>
-                <input
-                  id="po-location"
-                  type="text"
-                  placeholder="Contoh: Fakultas Teknik / Gedung Kuliah Lt. 2"
-                  value={locationDetail}
-                  onChange={(e) => setLocationDetail(e.target.value)}
-                  className="w-full px-3 py-2 text-xs bg-[#FAF8F5] border border-[#E2D9CE] rounded-lg text-[#1A1614] focus:outline-none focus:bg-white focus:border-[#C2410C]"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label
-                    htmlFor="po-shipping"
-                    className="block text-xs font-semibold text-[#1A1614] mb-1"
-                  >
-                    Ongkir (Rp)
-                  </label>
-                  <input
-                    id="po-shipping"
-                    type="number"
-                    min={0}
-                    step={500}
-                    value={shippingFee}
-                    onChange={(e) => setShippingFee(Math.max(0, Number(e.target.value) || 0))}
-                    className="w-full px-3 py-2 text-xs font-mono bg-[#FAF8F5] border border-[#E2D9CE] rounded-lg text-[#1A1614] focus:outline-none focus:bg-white focus:border-[#C2410C]"
-                  />
-                </div>
-                <div>
-                  <label
-                    htmlFor="po-discount"
-                    className="block text-xs font-semibold text-[#1A1614] mb-1"
-                  >
-                    Diskon (Rp)
-                  </label>
-                  <input
-                    id="po-discount"
-                    type="number"
-                    min={0}
-                    step={500}
-                    value={discount}
-                    onChange={(e) => setDiscount(Math.max(0, Number(e.target.value) || 0))}
-                    className="w-full px-3 py-2 text-xs font-mono bg-[#FAF8F5] border border-[#E2D9CE] rounded-lg text-[#1A1614] focus:outline-none focus:bg-white focus:border-[#C2410C]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <span className="block text-xs font-semibold text-[#1A1614] mb-1">
-                    Metode Pembayaran
-                  </span>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {(['Cash', 'QR / QRIS'] as PaymentMethod[]).map((method) => (
-                      <button
-                        key={method}
-                        type="button"
-                        onClick={() => setPaymentMethod(method)}
-                        className={`py-2 px-2 text-xs font-semibold rounded-lg border transition-colors cursor-pointer ${
-                          paymentMethod === method
-                            ? 'bg-[#1A1614] text-white border-[#1A1614]'
-                            : 'bg-[#FAF8F5] text-[#1A1614] border-[#E2D9CE]'
-                        }`}
-                      >
-                        {method}
-                      </button>
-                    ))}
+                  <div>
+                    <span className="block text-xs font-semibold text-[#1A1614] mb-1">
+                      Status Pembayaran
+                    </span>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {(['Lunas', 'Pending'] as PaymentStatus[]).map((st) => (
+                        <button
+                          key={st}
+                          type="button"
+                          onClick={() => setPaymentStatus(st)}
+                          className={`py-1.5 px-2 text-xs font-semibold rounded-lg border transition-colors cursor-pointer ${
+                            paymentStatus === st
+                              ? st === 'Lunas'
+                                ? 'bg-[#15803D] text-white border-[#15803D]'
+                                : 'bg-[#B45309] text-white border-[#B45309]'
+                              : 'bg-[#FAF8F5] text-[#1A1614] border-[#E2D9CE]'
+                          }`}
+                        >
+                          {st}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
                 <div>
                   <span className="block text-xs font-semibold text-[#1A1614] mb-1">
-                    Status Pembayaran
+                    Status Pemesanan
                   </span>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {(['Lunas', 'Pending'] as PaymentStatus[]).map((st) => (
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {ORDER_STATUSES.map((st) => (
                       <button
                         key={st}
                         type="button"
-                        onClick={() => setPaymentStatus(st)}
-                        className={`py-2 px-2 text-xs font-semibold rounded-lg border transition-colors cursor-pointer ${
-                          paymentStatus === st
-                            ? st === 'Lunas'
+                        onClick={() => setOrderStatus(st)}
+                        className={`py-1.5 px-2 text-xs font-semibold rounded-lg border transition-colors cursor-pointer ${
+                          orderStatus === st
+                            ? st === 'Selesai'
                               ? 'bg-[#15803D] text-white border-[#15803D]'
-                              : 'bg-[#B45309] text-white border-[#B45309]'
+                              : st === 'Proses'
+                                ? 'bg-[#C2410C] text-white border-[#C2410C]'
+                                : 'bg-[#1D4ED8] text-white border-[#1D4ED8]'
                             : 'bg-[#FAF8F5] text-[#1A1614] border-[#E2D9CE]'
                         }`}
                       >
@@ -595,7 +706,10 @@ export function PreOrderModal({
                   </div>
                 </div>
               </div>
+            </div>
 
+            {/* Pinned Checkout Submit Footer */}
+            <div className="shrink-0 px-4 sm:px-5 py-3 bg-[#FAF8F5] border-t border-[#E8E2DA] space-y-2.5">
               <label className="inline-flex items-center gap-2 text-xs text-[#6E635C] cursor-pointer">
                 <input
                   type="checkbox"
@@ -606,9 +720,9 @@ export function PreOrderModal({
                 <span>Langsung buka Generator Nota Digital setelah disimpan</span>
               </label>
 
-              <div className="pt-3 border-t border-[#EFEAE2] flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <div>
-                  <div className="text-xs text-[#6E635C]">Total Pembayaran</div>
+                  <div className="text-[11px] text-[#6E635C]">Total Pembayaran</div>
                   <div className="font-mono tabular-nums text-xl font-bold text-[#1A1614]">
                     {formatIDR(totalAmount)}
                   </div>
@@ -618,7 +732,7 @@ export function PreOrderModal({
                   type="submit"
                   className="px-5 py-2.5 rounded-lg bg-[#C2410C] hover:bg-[#A33609] text-white text-sm font-semibold transition-colors cursor-pointer"
                 >
-                  Simpan Pesanan
+                  {isEditing ? 'Simpan Perubahan' : 'Simpan Pesanan'}
                 </button>
               </div>
             </div>

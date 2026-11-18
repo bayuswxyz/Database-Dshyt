@@ -30,6 +30,7 @@ export interface OrderItem {
 }
 
 export type PaymentStatus = 'Lunas' | 'Pending';
+export type OrderStatus = 'Diterima' | 'Proses' | 'Selesai';
 export type PaymentMethod = 'Cash' | 'QR / QRIS';
 export type DeliveryMethod =
   | 'Delivery — Area Kampus'
@@ -46,6 +47,7 @@ export interface SalesOrder {
   courierNote: string;
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
+  orderStatus: OrderStatus;
   items: OrderItem[];
   itemsSubtotal: number;
   shippingFee: number;
@@ -54,6 +56,7 @@ export interface SalesOrder {
   invoiceNote?: string;
   sheetRowIndex?: number;
   sheetRawStatus?: string;
+  sheetRawOrderStatus?: string;
   source?: 'local' | 'sheets';
 }
 
@@ -101,11 +104,30 @@ export interface SheetTabInfo {
   title: string;
 }
 
+export interface SheetColumnIndices {
+  timestamp: number;
+  nama: number;
+  whatsapp: number;
+  pesanan: number;
+  total: number;
+  pengiriman: number;
+  alamat: number;
+  catatan: number;
+  metodeBayar: number;
+  statusBayar: number;
+  orderStatus: number;
+  hasOrderStatusHeader: boolean;
+}
+
 export interface ConnectedSpreadsheet {
   spreadsheetId: string;
   spreadsheetTitle: string;
+  sheetId?: number;
   sheetTitle: string;
   statusColumnLetter: string;
+  orderStatusColumnLetter?: string;
+  hasOrderStatusHeader?: boolean;
+  columnIndices?: SheetColumnIndices;
   lastSyncedAt?: string;
 }
 

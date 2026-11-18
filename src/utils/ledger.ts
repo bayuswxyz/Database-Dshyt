@@ -83,6 +83,9 @@ export interface SalesSummary {
   totalUnits: number;
   paidCount: number;
   pendingCount: number;
+  diterimaCount: number;
+  prosesCount: number;
+  selesaiCount: number;
 }
 
 export function summarizeSales(orders: SalesOrder[]): SalesSummary {
@@ -99,6 +102,14 @@ export function summarizeSales(orders: SalesOrder[]): SalesSummary {
         acc.pendingOmzet += order.totalAmount;
         acc.pendingCount += 1;
       }
+      const oStatus = order.orderStatus || 'Diterima';
+      if (oStatus === 'Selesai') {
+        acc.selesaiCount += 1;
+      } else if (oStatus === 'Proses') {
+        acc.prosesCount += 1;
+      } else {
+        acc.diterimaCount += 1;
+      }
       return acc;
     },
     {
@@ -109,6 +120,9 @@ export function summarizeSales(orders: SalesOrder[]): SalesSummary {
       totalUnits: 0,
       paidCount: 0,
       pendingCount: 0,
+      diterimaCount: 0,
+      prosesCount: 0,
+      selesaiCount: 0,
     }
   );
 }
@@ -299,7 +313,8 @@ export function buildWhatsAppInvoiceText(order: SalesOrder): string {
     `Tanggal: ${formatWIB(order.createdAt)}`,
     `Pembeli: ${order.customerName} (${order.whatsapp})`,
     `Pengiriman: ${order.deliveryMethod}${order.locationDetail ? ` — ${order.locationDetail}` : ''}`,
-    `Status: *${order.paymentStatus.toUpperCase()}* (${order.paymentMethod})`,
+    `Status Pembayaran: *${order.paymentStatus.toUpperCase()}* (${order.paymentMethod})`,
+    `Status Pesanan: *${(order.orderStatus || 'Diterima').toUpperCase()}*`,
     '',
     '*Rincian Pesanan:*',
     ...order.items.map((item) => {

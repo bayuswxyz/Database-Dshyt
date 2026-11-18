@@ -43,12 +43,18 @@ export function initGoogleAuth(
   });
 }
 
-export async function googleSignIn(): Promise<{
+export async function googleSignIn(loginHint?: string): Promise<{
   user: User;
   accessToken: string;
 }> {
   try {
     isSigningIn = true;
+    const hint = loginHint || auth.currentUser?.email || undefined;
+    if (hint) {
+      provider.setCustomParameters({ login_hint: hint });
+    } else {
+      provider.setCustomParameters({});
+    }
     const result = await signInWithPopup(auth, provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) {

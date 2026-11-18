@@ -24,7 +24,10 @@ import {
   getSpreadsheetMetadata,
   listDriveSpreadsheets,
 } from '../utils/googleSheetsApi';
-import { extractSpreadsheetId } from '../utils/sheetsParser';
+import {
+  extractSpreadsheetId,
+  findBestMatchingSpreadsheet,
+} from '../utils/sheetsParser';
 
 interface GoogleSheetsModalProps {
   isOpen: boolean;
@@ -109,10 +112,51 @@ export function GoogleSheetsModal({
   async function handleSignIn() {
     setIsLoggingIn(true);
     setErrorMsg('');
+    setStatusMsg('');
     try {
       const result = await googleSignIn();
       onAuthUpdated(result.user, true);
-      await fetchDriveFiles(result.accessToken, driveSearch);
+
+      const files = await listDriveSpreadsheets(result.accessToken, driveSearch);
+      setDriveFiles(files);
+
+      if (connectedSheet) {
+        setSelectedId(connectedSheet.spreadsheetId);
+        setSelectedTitle(connectedSheet.spreadsheetTitle);
+        setSelectedTab(connectedSheet.sheetTitle);
+        await onSyncFromGoogleSheet(
+          connectedSheet.spreadsheetId,
+          connectedSheet.spreadsheetTitle,
+          connectedSheet.sheetTitle
+        );
+        setStatusMsg(
+          `Koneksi dipulihkan otomatis ke "${connectedSheet.spreadsheetTitle}" (${connectedSheet.sheetTitle}).`
+        );
+        return;
+      }
+
+      const bestMatch = findBestMatchingSpreadsheet(files);
+      if (bestMatch) {
+        const meta = await getSpreadsheetMetadata(result.accessToken, bestMatch.id);
+        setSelectedId(bestMatch.id);
+        setSelectedTitle(meta.title || bestMatch.name);
+        setTabs(meta.tabs);
+        if (meta.tabs.length > 0) {
+          const preferred =
+            meta.tabs.find((t) =>
+              /pesanan|order|database|sheet1/i.test(t.title)
+            ) || meta.tabs[0];
+          setSelectedTab(preferred.title);
+          await onSyncFromGoogleSheet(
+            bestMatch.id,
+            meta.title || bestMatch.name,
+            preferred.title
+          );
+          setStatusMsg(
+            `Terhubung otomatis ke "${meta.title || bestMatch.name}" (${preferred.title}).`
+          );
+        }
+      }
     } catch (err) {
       const msg =
         err instanceof Error

@@ -56,11 +56,15 @@ test('order item and order total calculations handle extra shot, shipping, and d
   assert.equal(clamped.totalAmount, 0);
 });
 
-test('summarizeSales aggregates omzet, paid vs pending, and total units', () => {
+test('summarizeSales aggregates omzet, paid vs pending, order statuses, and total units', () => {
   const summary = summarizeSales(SEED_ORDERS);
   assert.equal(summary.totalOrders, SEED_ORDERS.length);
   assert.equal(summary.paidOmzet + summary.pendingOmzet, summary.totalOmzet);
   assert.equal(summary.paidCount + summary.pendingCount, summary.totalOrders);
+  assert.equal(
+    summary.diterimaCount + summary.prosesCount + summary.selesaiCount,
+    summary.totalOrders
+  );
   assert.ok(summary.totalUnits > 0);
 });
 
@@ -119,4 +123,5 @@ test('buildWhatsAppInvoiceText formats invoice details clearly', () => {
   assert.ok(text.includes('#DSHYT-8821'));
   assert.ok(text.includes('Nadia Kusuma'));
   assert.ok(text.includes('LUNAS'));
+  assert.ok(text.includes('PROSES'));
 });

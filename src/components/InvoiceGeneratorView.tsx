@@ -9,7 +9,7 @@ import {
   Search,
 } from 'lucide-react';
 import { EXTRA_SHOT_PRICE, STORE_INFO } from '../data/catalog';
-import type { SalesOrder } from '../types/dshyt';
+import type { OrderStatus, SalesOrder } from '../types/dshyt';
 import { exportInvoiceToPDF, exportInvoiceToPNG } from '../utils/exportUtils';
 import { buildWhatsAppInvoiceText, formatIDR, formatWIB } from '../utils/ledger';
 
@@ -22,6 +22,9 @@ interface InvoiceGeneratorViewProps {
     patch: { shippingFee: number; discount: number; invoiceNote: string }
   ) => void;
   onToggleStatus: (orderId: string) => void;
+  onUpdateOrderStatus: (orderId: string, nextOrderStatus: OrderStatus) => void;
+  canSyncRowToSheet?: boolean;
+  onPushOrderToSheet?: (order: SalesOrder) => void;
 }
 
 export function InvoiceGeneratorView({
@@ -30,6 +33,9 @@ export function InvoiceGeneratorView({
   onSelectOrderId,
   onUpdateOrderFinancials,
   onToggleStatus,
+  onUpdateOrderStatus,
+  canSyncRowToSheet,
+  onPushOrderToSheet,
 }: InvoiceGeneratorViewProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [paperFormat, setPaperFormat] = useState<'a5' | 'thermal'>('a5');
@@ -223,7 +229,8 @@ export function InvoiceGeneratorView({
                         </span>
                       </div>
                       <p className="text-[11px] text-[#6E635C] mt-0.5 truncate">
-                        {order.items.length} varian · {order.paymentStatus}
+                        {order.items.length} varian · {order.orderStatus || 'Diterima'} ·{' '}
+                        {order.paymentStatus}
                       </p>
                     </div>
                     <span className="font-mono tabular-nums text-xs font-semibold text-[#1A1614] shrink-0">
@@ -343,21 +350,54 @@ export function InvoiceGeneratorView({
               />
             </div>
 
-            <div className="flex items-center justify-between pt-2 border-t border-[#EFEAE2]">
-              <span className="text-xs font-medium text-[#6E635C]">
-                Status Pembayaran Saat Ini
-              </span>
-              <button
-                type="button"
-                onClick={() => onToggleStatus(activeOrder.id)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md border cursor-pointer ${
-                  isPaid
-                    ? 'text-[#15803D] bg-[#F0FDF4] border-[#BBF7D0]'
-                    : 'text-[#B45309] bg-[#FFFBEB] border-[#FDE68A]'
-                }`}
-              >
-                {activeOrder.paymentStatus} (Klik untuk ubah)
-              </button>
+            <div className="space-y-3 pt-2 border-t border-[#EFEAE2]">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-[#6E635C]">
+                  Status Pembayaran
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onToggleStatus(activeOrder.id)}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md border cursor-pointer ${
+                    isPaid
+                      ? 'text-[#15803D] bg-[#F0FDF4] border-[#BBF7D0]'
+                      : 'text-[#B45309] bg-[#FFFBEB] border-[#FDE68A]'
+                  }`}
+                >
+                  {activeOrder.paymentStatus} (Klik untuk ubah)
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <label
+                  htmlFor="inv-order-status"
+                  className="text-xs font-medium text-[#6E635C]"
+                >
+                  Status Pemesanan
+                </label>
+                <select
+                  id="inv-order-status"
+                  value={activeOrder.orderStatus || 'Diterima'}
+                  onChange={(e) =>
+                    onUpdateOrderStatus(activeOrder.id, e.target.value as OrderStatus)
+                  }
+                  className="px-3 py-1.5 text-xs font-semibold rounded-md border border-[#E2D9CE] bg-[#FAF8F5] text-[#1A1614] cursor-pointer"
+                >
+                  <option value="Diterima">Diterima</option>
+                  <option value="Proses">Proses</option>
+                  <option value="Selesai">Selesai</option>
+                </select>
+              </div>
+
+              {canSyncRowToSheet && activeOrder.sheetRowIndex && onPushOrderToSheet && (
+                <button
+                  type="button"
+                  onClick={() => onPushOrderToSheet(activeOrder)}
+                  className="w-full py-2 px-3 rounded-lg bg-[#1A1614] hover:bg-[#332B27] text-white text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Simpan Perubahan Nota ke Google Sheets (Baris #{activeOrder.sheetRowIndex})
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -478,7 +518,10 @@ export function InvoiceGeneratorView({
                   {activeOrder.id}
                 </div>
                 <div style={{ color: '#6e635c', fontSize: '11px', marginTop: '2px' }}>
-                  {formatWIB(activeOrder.createdAt)}
+                  {formatWIB(activeOrder.createdAt)} · Progres:{' '}
+                  <strong style={{ color: '#1a1614' }}>
+                    {activeOrder.orderStatus || 'Diterima'}
+                  </strong>
                 </div>
               </div>
 

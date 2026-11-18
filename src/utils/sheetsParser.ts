@@ -1,15 +1,55 @@
 import { EXTRA_SHOT_PRICE, MENU_CATALOG } from '../data/catalog';
 import type {
   DeliveryMethod,
+  DriveSpreadsheetFile,
   IceLevel,
   MenuItem,
   OrderItem,
+  OrderStatus,
   PaymentMethod,
   PaymentStatus,
   SalesOrder,
+  SheetColumnIndices,
   SugarLevel,
 } from '../types/dshyt';
 import { calculateOrderItemSubtotal } from './ledger';
+
+export const DEFAULT_SHEET_COLUMNS: SheetColumnIndices = {
+  timestamp: 0,
+  nama: 1,
+  whatsapp: 2,
+  pesanan: 3,
+  total: 4,
+  pengiriman: 5,
+  alamat: 6,
+  catatan: 7,
+  metodeBayar: 8,
+  statusBayar: 9,
+  orderStatus: 12,
+  hasOrderStatusHeader: false,
+};
+
+export function findBestMatchingSpreadsheet(
+  files: DriveSpreadsheetFile[]
+): DriveSpreadsheetFile | null {
+  if (!files || files.length === 0) return null;
+  const exactOrderDb = files.find((f) => {
+    const name = f.name.toLowerCase();
+    return (
+      name.includes('database') &&
+      (name.includes('shyt') || name.includes('pesanan') || name.includes('kopi'))
+    );
+  });
+  if (exactOrderDb) return exactOrderDb;
+
+  const brandMatch = files.find((f) => {
+    const name = f.name.toLowerCase();
+    return name.includes('shyt') || name.includes('pesanan');
+  });
+  if (brandMatch) return brandMatch;
+
+  return files.length === 1 ? files[0] : null;
+}
 
 export function extractSpreadsheetId(input: string): string | null {
   const trimmed = input.trim();
@@ -183,6 +223,30 @@ export function serializePaymentStatusForSheet(
   return paymentMethod === 'QR / QRIS' ? 'Menunggu Konfirmasi' : 'Pending';
 }
 
+export function parseOrderStatus(raw: string): OrderStatus {
+  const lower = raw.trim().toLowerCase();
+  if (
+    lower === 'selesai' ||
+    lower === 'done' ||
+    lower === 'completed' ||
+    lower === 'diambil' ||
+    lower === 'terkirim'
+  ) {
+    return 'Selesai';
+  }
+  if (
+    lower === 'proses' ||
+    lower === 'diproses' ||
+    lower === 'process' ||
+    lower === 'processing' ||
+    lower.includes('proses') ||
+    lower.includes('buat')
+  ) {
+    return 'Proses';
+  }
+  return 'Diterima';
+}
+
 export function parseOrderItemsString(
   rawPesanan: string,
   orderIdPrefix: string,
@@ -239,6 +303,9 @@ export function parseOrderItemsString(
 export interface ParsedSheetResult {
   orders: SalesOrder[];
   statusColumnLetter: string;
+  orderStatusColumnLetter: string;
+  hasOrderStatusHeader: boolean;
+  columnIndices: SheetColumnIndices;
 }
 
 export function parseSheetValuesToOrders(
@@ -246,10 +313,24 @@ export function parseSheetValuesToOrders(
   catalog: MenuItem[] = MENU_CATALOG
 ): ParsedSheetResult {
   if (!values || values.length === 0) {
-    return { orders: [], statusColumnLetter: 'J' };
+    return {
+      orders: [],
+      statusColumnLetter: 'J',
+      orderStatusColumnLetter: 'M',
+      hasOrderStatusHeader: false,
+      columnIndices: DEFAULT_SHEET_COLUMNS,
+    };
   }
 
   const header = values[0].map((h) => h.trim().toLowerCase());
+  const detectedOrderStatusIdx = header.findIndex(
+    (h) =>
+      h.includes('status pemesanan') ||
+      h.includes('status pesanan') ||
+      h.includes('status order') ||
+      h.includes('progres')
+  );
+
   const colIdx = {
     timestamp: header.findIndex((h) => h.includes('timestamp') || h.includes('tanggal')),
     nama: header.findIndex((h) => h === 'nama' || h.includes('pembeli')),
@@ -260,7 +341,8 @@ export function parseSheetValuesToOrders(
     alamat: header.findIndex((h) => h.includes('alamat') || h.includes('lokasi')),
     catatan: header.findIndex((h) => h === 'catatan'),
     metodeBayar: header.findIndex((h) => h.includes('metode')),
-    statusBayar: header.findIndex((h) => h.includes('status')),
+    statusBayar: header.findIndex((h) => h.includes('status pembayaran') || h === 'status'),
+    orderStatus: detectedOrderStatusIdx,
   };
 
   const tsCol = colIdx.timestamp >= 0 ? colIdx.timestamp : 0;
@@ -273,6 +355,25 @@ export function parseSheetValuesToOrders(
   const catatanCol = colIdx.catatan >= 0 ? colIdx.catatan : 7;
   const metodeCol = colIdx.metodeBayar >= 0 ? colIdx.metodeBayar : 8;
   const statusCol = colIdx.statusBayar >= 0 ? colIdx.statusBayar : 9;
+  const hasOrderStatusHeader = detectedOrderStatusIdx >= 0;
+  const orderStatusCol = hasOrderStatusHeader
+    ? detectedOrderStatusIdx
+    : Math.max(12, header.length);
+
+  const columnIndices: SheetColumnIndices = {
+    timestamp: tsCol,
+    nama: namaCol,
+    whatsapp: waCol,
+    pesanan: pesananCol,
+    total: totalCol,
+    pengiriman: pengirimanCol,
+    alamat: alamatCol,
+    catatan: catatanCol,
+    metodeBayar: metodeCol,
+    statusBayar: statusCol,
+    orderStatus: orderStatusCol,
+    hasOrderStatusHeader,
+  };
 
   const parsedOrders: SalesOrder[] = [];
   let seq = 1;
@@ -310,6 +411,8 @@ export function parseSheetValuesToOrders(
     const paymentMethod = parsePaymentMethod(row[metodeCol] || '');
     const rawStatus = (row[statusCol] || '').trim();
     const paymentStatus = parsePaymentStatus(rawStatus);
+    const rawOrderStatus = hasOrderStatusHeader ? (row[orderStatusCol] || '').trim() : '';
+    const orderStatus = parseOrderStatus(rawOrderStatus);
 
     parsedOrders.push({
       id: orderId,
@@ -321,6 +424,7 @@ export function parseSheetValuesToOrders(
       courierNote: combinedNote,
       paymentMethod,
       paymentStatus,
+      orderStatus,
       items,
       itemsSubtotal,
       shippingFee,
@@ -329,6 +433,7 @@ export function parseSheetValuesToOrders(
       invoiceNote: combinedNote || undefined,
       sheetRowIndex: r + 1, // 1-based Google Sheets row index
       sheetRawStatus: rawStatus || serializePaymentStatusForSheet(paymentStatus, paymentMethod),
+      sheetRawOrderStatus: rawOrderStatus || orderStatus,
       source: 'sheets',
     });
   }
@@ -341,32 +446,138 @@ export function parseSheetValuesToOrders(
   return {
     orders: parsedOrders,
     statusColumnLetter: columnIndexToLetter(statusCol),
+    orderStatusColumnLetter: columnIndexToLetter(orderStatusCol),
+    hasOrderStatusHeader,
+    columnIndices,
   };
 }
 
-export function serializeOrderToSheetRow(order: SalesOrder): string[] {
-  const pesananStr = order.items
+export function formatOrderItemsForSheet(items: OrderItem[]): string {
+  return items
     .map((item) => {
       const parts: string[] = [item.iceLevel, item.sugarLevel];
       if (item.extraShot) parts.push('Extra Shot');
       return `${item.name} (${item.qty}x: ${parts.join(', ')})`;
     })
     .join(' | ');
+}
 
+export function serializeOrderToSheetRow(
+  order: SalesOrder,
+  colIndices: SheetColumnIndices = DEFAULT_SHEET_COLUMNS
+): string[] {
+  const pesananStr = formatOrderItemsForSheet(order.items);
   const waClean = order.whatsapp.replace(/^0/, '');
+  const maxIdx = Math.max(12, colIndices.orderStatus);
+  const row = new Array<string>(maxIdx + 1).fill('');
 
-  return [
-    formatTimestampForSheetWIB(order.createdAt),
-    order.customerName,
-    waClean,
-    pesananStr,
-    `Rp${new Intl.NumberFormat('id-ID').format(order.totalAmount)}`,
-    serializeDeliveryMethodForSheet(order.deliveryMethod),
-    order.locationDetail || '-',
-    order.courierNote || '-',
-    serializePaymentMethodForSheet(order.paymentMethod),
-    serializePaymentStatusForSheet(order.paymentStatus, order.paymentMethod),
-    '-',
-    '-',
-  ];
+  row[colIndices.timestamp] = formatTimestampForSheetWIB(order.createdAt);
+  row[colIndices.nama] = order.customerName;
+  row[colIndices.whatsapp] = waClean;
+  row[colIndices.pesanan] = pesananStr;
+  row[colIndices.total] = `Rp${new Intl.NumberFormat('id-ID').format(order.totalAmount)}`;
+  row[colIndices.pengiriman] = serializeDeliveryMethodForSheet(order.deliveryMethod);
+  row[colIndices.alamat] = order.locationDetail || '-';
+  row[colIndices.catatan] = order.courierNote || '-';
+  row[colIndices.metodeBayar] = serializePaymentMethodForSheet(order.paymentMethod);
+  row[colIndices.statusBayar] = serializePaymentStatusForSheet(
+    order.paymentStatus,
+    order.paymentMethod
+  );
+  if (row[10] === '') row[10] = '-';
+  if (row[11] === '') row[11] = '-';
+  row[colIndices.orderStatus] = order.orderStatus || 'Diterima';
+
+  return row;
+}
+
+export interface SheetCellUpdate {
+  rangeA1: string;
+  values: string[][];
+}
+
+export function buildSheetRowUpdatePayload(
+  order: SalesOrder,
+  rowIndex: number,
+  colIndices: SheetColumnIndices = DEFAULT_SHEET_COLUMNS
+): SheetCellUpdate[] {
+  const updates: SheetCellUpdate[] = [];
+  const pesananStr = formatOrderItemsForSheet(order.items);
+  const waClean = order.whatsapp.replace(/^0/, '');
+  const totalStr = `Rp${new Intl.NumberFormat('id-ID').format(order.totalAmount)}`;
+  const pengirimanStr = serializeDeliveryMethodForSheet(order.deliveryMethod);
+  const alamatStr = order.locationDetail || '-';
+  const catatanStr = order.courierNote || '-';
+  const metodeStr = serializePaymentMethodForSheet(order.paymentMethod);
+  const statusBayarStr = serializePaymentStatusForSheet(
+    order.paymentStatus,
+    order.paymentMethod
+  );
+  const orderStatusStr = order.orderStatus || 'Diterima';
+
+  const isStandardContiguousAJ =
+    colIndices.timestamp === 0 &&
+    colIndices.nama === 1 &&
+    colIndices.whatsapp === 2 &&
+    colIndices.pesanan === 3 &&
+    colIndices.total === 4 &&
+    colIndices.pengiriman === 5 &&
+    colIndices.alamat === 6 &&
+    colIndices.catatan === 7 &&
+    colIndices.metodeBayar === 8 &&
+    colIndices.statusBayar === 9;
+
+  if (isStandardContiguousAJ) {
+    updates.push({
+      rangeA1: `A${rowIndex}:J${rowIndex}`,
+      values: [
+        [
+          formatTimestampForSheetWIB(order.createdAt),
+          order.customerName,
+          waClean,
+          pesananStr,
+          totalStr,
+          pengirimanStr,
+          alamatStr,
+          catatanStr,
+          metodeStr,
+          statusBayarStr,
+        ],
+      ],
+    });
+  } else {
+    const pairs: [number, string][] = [
+      [colIndices.timestamp, formatTimestampForSheetWIB(order.createdAt)],
+      [colIndices.nama, order.customerName],
+      [colIndices.whatsapp, waClean],
+      [colIndices.pesanan, pesananStr],
+      [colIndices.total, totalStr],
+      [colIndices.pengiriman, pengirimanStr],
+      [colIndices.alamat, alamatStr],
+      [colIndices.catatan, catatanStr],
+      [colIndices.metodeBayar, metodeStr],
+      [colIndices.statusBayar, statusBayarStr],
+    ];
+    for (const [cIdx, val] of pairs) {
+      const colLetter = columnIndexToLetter(cIdx);
+      updates.push({
+        rangeA1: `${colLetter}${rowIndex}`,
+        values: [[val]],
+      });
+    }
+  }
+
+  const orderStatusColLetter = columnIndexToLetter(colIndices.orderStatus);
+  if (!colIndices.hasOrderStatusHeader) {
+    updates.push({
+      rangeA1: `${orderStatusColLetter}1`,
+      values: [['Status Pemesanan']],
+    });
+  }
+  updates.push({
+    rangeA1: `${orderStatusColLetter}${rowIndex}`,
+    values: [[orderStatusStr]],
+  });
+
+  return updates;
 }

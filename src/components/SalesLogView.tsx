@@ -5,16 +5,24 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
+  Pencil,
   Plus,
   Search,
   Trash2,
 } from 'lucide-react';
-import type { DeliveryMethod, PaymentStatus, SalesOrder } from '../types/dshyt';
+import type {
+  DeliveryMethod,
+  OrderStatus,
+  PaymentStatus,
+  SalesOrder,
+} from '../types/dshyt';
 import { formatIDR, formatWIB, summarizeSales } from '../utils/ledger';
 
 interface SalesLogViewProps {
   orders: SalesOrder[];
   onToggleStatus: (orderId: string) => void;
+  onUpdateOrderStatus: (orderId: string, nextOrderStatus: OrderStatus) => void;
+  onEditOrder: (order: SalesOrder) => void;
   onOpenInvoice: (orderId: string) => void;
   onDeleteOrder: (orderId: string) => void;
   onOpenNewOrder: () => void;
@@ -22,9 +30,21 @@ interface SalesLogViewProps {
   onExportXLSX: () => void;
 }
 
+function getOrderStatusSelectClasses(status: OrderStatus): string {
+  if (status === 'Selesai') {
+    return 'text-[#15803D] bg-[#F0FDF4] border-[#BBF7D0] hover:bg-[#DCFCE7]';
+  }
+  if (status === 'Proses') {
+    return 'text-[#C2410C] bg-[#FFF7ED] border-[#FED7AA] hover:bg-[#FFEDD5]';
+  }
+  return 'text-[#1D4ED8] bg-[#EFF6FF] border-[#BFDBFE] hover:bg-[#DBEAFE]';
+}
+
 export function SalesLogView({
   orders,
   onToggleStatus,
+  onUpdateOrderStatus,
+  onEditOrder,
   onOpenInvoice,
   onDeleteOrder,
   onOpenNewOrder,
@@ -33,6 +53,7 @@ export function SalesLogView({
 }: SalesLogViewProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'Semua' | PaymentStatus>('Semua');
+  const [orderStatusFilter, setOrderStatusFilter] = useState<'Semua' | OrderStatus>('Semua');
   const [deliveryFilter, setDeliveryFilter] = useState<'Semua' | DeliveryMethod>('Semua');
   const [periodFilter, setPeriodFilter] = useState<'all' | 'today' | '7d' | '30d'>('all');
 
@@ -48,6 +69,10 @@ export function SalesLogView({
 
     return orders.filter((order) => {
       if (statusFilter !== 'Semua' && order.paymentStatus !== statusFilter) {
+        return false;
+      }
+      const effectiveOrderStatus = order.orderStatus || 'Diterima';
+      if (orderStatusFilter !== 'Semua' && effectiveOrderStatus !== orderStatusFilter) {
         return false;
       }
       if (deliveryFilter !== 'Semua' && order.deliveryMethod !== deliveryFilter) {
@@ -70,7 +95,7 @@ export function SalesLogView({
       const matchesItem = order.items.some((i) => i.name.toLowerCase().includes(q));
       return matchesId || matchesBuyer || matchesWa || matchesItem;
     });
-  }, [orders, searchQuery, statusFilter, deliveryFilter, periodFilter]);
+  }, [orders, searchQuery, statusFilter, orderStatusFilter, deliveryFilter, periodFilter]);
 
   const filteredOmzet = useMemo(
     () => filteredOrders.reduce((sum, o) => sum + o.totalAmount, 0),
@@ -160,16 +185,21 @@ export function SalesLogView({
               summary.totalOrders > 0 ? Math.round(summary.totalOmzet / summary.totalOrders) : 0
             )}
           </p>
-          <p className="text-xs text-[#6E635C] mt-1">
-            Zona waktu standar WIB (UTC+7)
+          <p className="text-xs text-[#6E635C] mt-1 tabular-nums">
+            {summary.diterimaCount} diterima · {summary.prosesCount} proses · {summary.selesaiCount}{' '}
+            selesai
           </p>
         </div>
       </div>
 
       {/* Filter & Search Toolbar */}
-      <div className="bg-white border border-[#E8E2DA] rounded-xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1 p-1 bg-[#F3EFE9] rounded-lg" role="group" aria-label="Filter status pembayaran">
+      <div className="bg-white border border-[#E8E2DA] rounded-xl p-4 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div
+            className="flex items-center gap-1 p-1 bg-[#F3EFE9] rounded-lg"
+            role="group"
+            aria-label="Filter status pembayaran"
+          >
             {(['Semua', 'Lunas', 'Pending'] as const).map((status) => (
               <button
                 key={status}
@@ -185,6 +215,23 @@ export function SalesLogView({
               </button>
             ))}
           </div>
+
+          <label className="sr-only" htmlFor="order-status-filter">
+            Filter status pemesanan
+          </label>
+          <select
+            id="order-status-filter"
+            value={orderStatusFilter}
+            onChange={(e) =>
+              setOrderStatusFilter(e.target.value as 'Semua' | OrderStatus)
+            }
+            className="px-3 py-2 text-xs font-medium bg-white border border-[#E2D9CE] rounded-lg text-[#1A1614] focus:outline-none focus:border-[#C2410C]"
+          >
+            <option value="Semua">Semua Progres ({summary.totalOrders})</option>
+            <option value="Diterima">Diterima ({summary.diterimaCount})</option>
+            <option value="Proses">Proses ({summary.prosesCount})</option>
+            <option value="Selesai">Selesai ({summary.selesaiCount})</option>
+          </select>
 
           <label className="sr-only" htmlFor="delivery-filter">
             Filter metode pengiriman
@@ -219,8 +266,8 @@ export function SalesLogView({
           </select>
         </div>
 
-        <div className="flex items-center gap-3 w-full lg:w-auto">
-          <div className="relative flex-1 lg:w-72">
+        <div className="flex items-center gap-3 w-full xl:w-auto">
+          <div className="relative flex-1 xl:w-64">
             <Search
               className="w-4 h-4 text-[#8A7E75] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
               aria-hidden="true"
@@ -253,6 +300,7 @@ export function SalesLogView({
             <div className="mt-5 flex items-center justify-center gap-3">
               {(searchQuery ||
                 statusFilter !== 'Semua' ||
+                orderStatusFilter !== 'Semua' ||
                 deliveryFilter !== 'Semua' ||
                 periodFilter !== 'all') && (
                 <button
@@ -260,6 +308,7 @@ export function SalesLogView({
                   onClick={() => {
                     setSearchQuery('');
                     setStatusFilter('Semua');
+                    setOrderStatusFilter('Semua');
                     setDeliveryFilter('Semua');
                     setPeriodFilter('all');
                   }}
@@ -279,35 +328,37 @@ export function SalesLogView({
             </div>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div data-testid="sales-table-scroll" className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-[#E8E2DA] bg-[#FAF8F5] text-[11px] font-semibold text-[#6E635C] uppercase tracking-wider">
-                  <th className="py-3 px-4">ID Order &amp; Tanggal</th>
-                  <th className="py-3 px-4">Pembeli &amp; Pengiriman</th>
-                  <th className="py-3 px-4">Varian Produk</th>
-                  <th className="py-3 px-4 text-right">Qty</th>
-                  <th className="py-3 px-4 text-right">Harga Satuan</th>
-                  <th className="py-3 px-4 text-right">Total Harga</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4 text-right">Aksi</th>
+                  <th className="py-3 px-2.5">ID Order &amp; Tanggal</th>
+                  <th className="py-3 px-2.5">Pembeli &amp; Pengiriman</th>
+                  <th className="py-3 px-2.5">Varian Produk</th>
+                  <th className="py-3 px-2 text-right">Qty</th>
+                  <th className="py-3 px-2 text-right whitespace-nowrap">Harga Satuan</th>
+                  <th className="py-3 px-2.5 text-right whitespace-nowrap">Total Harga</th>
+                  <th className="py-3 px-2 whitespace-nowrap">Status Pesanan</th>
+                  <th className="py-3 px-2">Pembayaran</th>
+                  <th className="py-3 px-2.5 text-right">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#EFEAE2] text-sm">
                 {filteredOrders.map((order) => {
                   const totalQty = order.items.reduce((sum, item) => sum + item.qty, 0);
                   const isPaid = order.paymentStatus === 'Lunas';
+                  const currentOrderStatus: OrderStatus = order.orderStatus || 'Diterima';
 
                   return (
                     <tr
                       key={order.id}
                       className="hover:bg-[#FAF8F5]/80 transition-colors align-top"
                     >
-                      <td className="py-3.5 px-4 whitespace-nowrap">
+                      <td className="py-3 px-2.5 whitespace-nowrap">
                         <div className="font-mono text-xs font-semibold text-[#1A1614]">
                           {order.id}
                         </div>
-                        <div className="text-xs text-[#6E635C] mt-0.5 tabular-nums">
+                        <div className="text-[11px] text-[#6E635C] mt-0.5 tabular-nums">
                           {formatWIB(order.createdAt)}
                         </div>
                         {order.sheetRowIndex && (
@@ -317,24 +368,24 @@ export function SalesLogView({
                         )}
                       </td>
 
-                      <td className="py-3.5 px-4 min-w-[180px]">
-                        <div className="font-semibold text-[#1A1614]">
+                      <td className="py-3 px-2.5 min-w-[140px] max-w-[195px]">
+                        <div className="font-semibold text-xs sm:text-sm text-[#1A1614] truncate">
                           {order.customerName}
                         </div>
-                        <div className="text-xs text-[#6E635C] mt-0.5">
+                        <div className="text-[11px] text-[#6E635C] mt-0.5 leading-snug">
                           {order.deliveryMethod} · {order.paymentMethod}
                         </div>
                         {order.locationDetail && (
-                          <div className="text-xs text-[#8A7E75] truncate max-w-[220px]">
+                          <div className="text-[11px] text-[#8A7E75] truncate max-w-[180px]">
                             {order.locationDetail}
                           </div>
                         )}
                       </td>
 
-                      <td className="py-3.5 px-4 min-w-[210px]">
+                      <td className="py-3 px-2.5 min-w-[140px] max-w-[195px]">
                         <ul className="space-y-1">
                           {order.items.map((item) => (
-                            <li key={item.id} className="text-xs text-[#1A1614]">
+                            <li key={item.id} className="text-xs text-[#1A1614] leading-snug">
                               <span className="font-mono font-medium">{item.qty}x</span>{' '}
                               <span className="font-medium">{item.name}</span>
                               {item.extraShot && (
@@ -345,11 +396,11 @@ export function SalesLogView({
                         </ul>
                       </td>
 
-                      <td className="py-3.5 px-4 text-right font-mono tabular-nums text-xs text-[#1A1614] whitespace-nowrap">
+                      <td className="py-3 px-2 text-right font-mono tabular-nums text-xs text-[#1A1614] whitespace-nowrap">
                         {totalQty}
                       </td>
 
-                      <td className="py-3.5 px-4 text-right font-mono tabular-nums text-xs text-[#6E635C] whitespace-nowrap">
+                      <td className="py-3 px-2 text-right font-mono tabular-nums text-xs text-[#6E635C] whitespace-nowrap">
                         <div className="space-y-1">
                           {order.items.map((item) => (
                             <div key={item.id}>
@@ -359,8 +410,8 @@ export function SalesLogView({
                         </div>
                       </td>
 
-                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                        <div className="font-mono tabular-nums font-semibold text-[#1A1614]">
+                      <td className="py-3 px-2.5 text-right whitespace-nowrap">
+                        <div className="font-mono tabular-nums text-xs sm:text-sm font-semibold text-[#1A1614]">
                           {formatIDR(order.totalAmount)}
                         </div>
                         {(order.shippingFee > 0 || order.discount > 0) && (
@@ -372,13 +423,30 @@ export function SalesLogView({
                         )}
                       </td>
 
-                      <td className="py-3.5 px-4 whitespace-nowrap">
+                      <td className="py-3 px-2 whitespace-nowrap">
+                        <select
+                          aria-label={`Status pemesanan ${order.id} (saat ini ${currentOrderStatus})`}
+                          value={currentOrderStatus}
+                          onChange={(e) =>
+                            onUpdateOrderStatus(order.id, e.target.value as OrderStatus)
+                          }
+                          className={`text-xs font-semibold px-2 py-1 rounded-md border transition-colors cursor-pointer focus:outline-none ${getOrderStatusSelectClasses(
+                            currentOrderStatus
+                          )}`}
+                        >
+                          <option value="Diterima">Diterima</option>
+                          <option value="Proses">Proses</option>
+                          <option value="Selesai">Selesai</option>
+                        </select>
+                      </td>
+
+                      <td className="py-3 px-2 whitespace-nowrap">
                         <button
                           type="button"
                           onClick={() => onToggleStatus(order.id)}
                           aria-label={`Ubah status pembayaran ${order.id} (saat ini ${order.paymentStatus})`}
                           title="Klik untuk ubah status Lunas / Pending"
-                          className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-md border transition-colors cursor-pointer ${
+                          className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-md border transition-colors cursor-pointer ${
                             isPaid
                               ? 'text-[#15803D] bg-[#F0FDF4] border-[#BBF7D0] hover:bg-[#DCFCE7]'
                               : 'text-[#B45309] bg-[#FFFBEB] border-[#FDE68A] hover:bg-[#FEF3C7]'
@@ -393,15 +461,24 @@ export function SalesLogView({
                         </button>
                       </td>
 
-                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                        <div className="inline-flex items-center justify-end gap-1.5">
+                      <td className="py-3 px-2.5 text-right whitespace-nowrap">
+                        <div className="inline-flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={() => onEditOrder(order)}
+                            aria-label={`Edit pesanan ${order.id}`}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold text-[#1A1614] bg-white border border-[#E2D9CE] hover:border-[#C2410C] hover:text-[#C2410C] transition-colors cursor-pointer"
+                          >
+                            <Pencil className="w-3 h-3" aria-hidden="true" />
+                            <span>Edit</span>
+                          </button>
                           <button
                             type="button"
                             onClick={() => onOpenInvoice(order.id)}
                             aria-label={`Buat nota digital untuk ${order.id}`}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold text-[#1A1614] bg-[#FAF8F5] border border-[#E2D9CE] hover:border-[#C2410C] hover:text-[#C2410C] transition-colors cursor-pointer"
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold text-[#1A1614] bg-[#FAF8F5] border border-[#E2D9CE] hover:border-[#C2410C] hover:text-[#C2410C] transition-colors cursor-pointer"
                           >
-                            <FileText className="w-3.5 h-3.5" aria-hidden="true" />
+                            <FileText className="w-3 h-3" aria-hidden="true" />
                             <span>Nota</span>
                           </button>
                           <button

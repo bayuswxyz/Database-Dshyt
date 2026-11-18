@@ -80,7 +80,7 @@ export async function readSheetValues(
   spreadsheetId: string,
   sheetTitle: string
 ): Promise<string[][]> {
-  const safeSheet = `'${sheetTitle.replace(/'/g, "''")}'!A1:L2000`;
+  const safeSheet = `'${sheetTitle.replace(/'/g, "''")}'!A1:O2000`;
   const res = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(safeSheet)}`,
     {
@@ -117,13 +117,41 @@ export async function updateSheetCellValue(
   await handleApiResponse(res);
 }
 
+export async function batchUpdateSheetValues(
+  accessToken: string,
+  spreadsheetId: string,
+  sheetTitle: string,
+  updates: Array<{ rangeA1: string; values: string[][] }>
+): Promise<void> {
+  const escapedSheet = `'${sheetTitle.replace(/'/g, "''")}'`;
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values:batchUpdate`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        valueInputOption: 'USER_ENTERED',
+        data: updates.map((u) => ({
+          range: `${escapedSheet}!${u.rangeA1}`,
+          majorDimension: 'ROWS',
+          values: u.values,
+        })),
+      }),
+    }
+  );
+  await handleApiResponse(res);
+}
+
 export async function appendSheetRow(
   accessToken: string,
   spreadsheetId: string,
   sheetTitle: string,
   rowValues: string[]
 ): Promise<void> {
-  const range = `'${sheetTitle.replace(/'/g, "''")}'!A:L`;
+  const range = `'${sheetTitle.replace(/'/g, "''")}'!A:O`;
   const res = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
     {
@@ -135,6 +163,40 @@ export async function appendSheetRow(
       body: JSON.stringify({
         majorDimension: 'ROWS',
         values: [rowValues],
+      }),
+    }
+  );
+  await handleApiResponse(res);
+}
+
+export async function deleteSheetRow(
+  accessToken: string,
+  spreadsheetId: string,
+  sheetId: number,
+  rowIndexOneBased: number
+): Promise<void> {
+  const zeroBasedIndex = Math.max(1, rowIndexOneBased) - 1;
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}:batchUpdate`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        requests: [
+          {
+            deleteDimension: {
+              range: {
+                sheetId,
+                dimension: 'ROWS',
+                startIndex: zeroBasedIndex,
+                endIndex: zeroBasedIndex + 1,
+              },
+            },
+          },
+        ],
       }),
     }
   );
